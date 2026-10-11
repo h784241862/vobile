@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Vobile 新手任务看板</title>
+<style>
+  :root { --bg:#0f1420; --card:#1a2133; --line:#2a3450; --txt:#e8edf7; --sub:#8b98b8;
+          --ok:#22c55e; --bad:#ef4444; --wait:#64748b; --blue:#3b82f6; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:12px; }
+  h1 { font-size:18px; margin:4px 0 2px; }
+  .upd { color:var(--sub); font-size:12px; margin-bottom:10px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok);
+         margin-right:6px; animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:10px 8px; text-align:center; }
+  .card .n { font-size:20px; font-weight:700; }
+  .card .t { font-size:11px; color:var(--sub); margin-top:2px; }
+  .bar { height:12px; background:var(--card); border:1px solid var(--line);
+         border-radius:8px; overflow:hidden; margin-bottom:12px; }
+  .bar > i { display:block; height:100%; width:0%; background:linear-gradient(90deg,#22c55e,#3b82f6);
+             transition:width .4s; }
+  .tools { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  input, select { background:var(--card); color:var(--txt); border:1px solid var(--line);
+                  border-radius:10px; padding:9px 12px; font-size:15px; }
+  input { flex:1; min-width:140px; }
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .row .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .phone { font-size:17px; font-weight:700; letter-spacing:.5px; font-variant-numeric:tabular-nums; }
+  .tag { font-size:12px; padding:2px 9px; border-radius:999px; font-weight:700; white-space:nowrap; }
+  .t-ok { background:rgba(34,197,94,.16); color:var(--ok); }
+  .t-bad{ background:rgba(239,68,68,.16); color:var(--bad); }
+  .t-wait{ background:rgba(100,116,139,.18); color:var(--wait); }
+  .mid { margin-top:6px; font-size:13px; color:var(--sub); line-height:1.5; }
+  .score { color:var(--blue); font-weight:700; }
+  .foot { color:var(--sub); font-size:11px; margin-top:14px; text-align:center; }
+  /* 登录 */
+  #login { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center;
+           justify-content:center; flex-direction:column; gap:14px; z-index:9; }
+  #login h2 { margin:0; font-size:20px; }
+  #login input { width:240px; text-align:center; flex:none; }
+  #login button { padding:11px 26px; border-radius:10px; border:0; background:#2f6fed; color:#fff;
+                  font-size:16px; font-weight:700; }
+  #login .err { color:var(--bad); font-size:13px; min-height:18px; }
+  .hide { display:none !important; }
+  @media (max-width:420px){ .cards{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Vobile 发号器 / 看板</h2>
+  <input id="pw" type="password" placeholder="请输入管理员密码" inputmode="numeric">
+  <button onclick="doLogin()">登录</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="wrap hide" id="main">
+  <h1>Vobile 新手任务看板</h1>
+  <div class="upd"><span class="dot"></span>自动刷新中 · 最近更新：<span id="upd">-</span>
+    <a href="#" onclick="logout();return false" style="color:var(--sub);float:right">退出</a></div>
+
+  <div class="cards">
+    <div class="card"><div class="n" id="n-total">-</div><div class="t">总数</div></div>
+    <div class="card"><div class="n" style="color:var(--ok)" id="n-done">-</div><div class="t">已完成</div></div>
+    <div class="card"><div class="n" style="color:var(--bad)" id="n-fail">-</div><div class="t">失败</div></div>
+    <div class="card"><div class="n" style="color:var(--wait)" id="n-rest">-</div><div class="t">未跑</div></div>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+
+  <div class="tools">
+    <input id="q" placeholder="搜索手机号…" inputmode="numeric">
+    <select id="f">
+      <option value="all">全部</option>
+      <option value="ok">只看完成</option>
+      <option value="bad">只看未完成</option>
+      <option value="wait">只看未跑</option>
+    </select>
+  </div>
+
+  <div class="list" id="list"></div>
+  <div class="foot">数据由电脑端上传到云端 · 页面每 5 秒自动刷新 · 电脑关机也能看</div>
+</div>
+
+<script>
+var DATA = { rows: [], total: 0, done: 0, fail: 0, rest: 0, updated: "-" };
+var shown = 0, LIMIT = 200;
+
+function esc(s){ return String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function tag(r){
+  if (r.ok === true)  return '<span class="tag t-ok">完成</span>';
+  if (r.ok === false) return '<span class="tag t-bad">未完成</span>';
+  return '<span class="tag t-wait">未跑</span>';
+}
+
+function filtered(){
+  var q = (document.getElementById("q").value || "").trim();
+  var f = document.getElementById("f").value;
+  return DATA.rows.filter(function(r){
+    if (q && r.phone.indexOf(q) < 0) return false;
+    if (f === "ok"   && r.ok !== true)  return false;
+    if (f === "bad"  && r.ok !== false) return false;
+    if (f === "wait" && r.ok !== null)  return false;
+    return true;
+  });
+}
+
+function render(reset){
+  if (reset) shown = 0;
+  var rows = filtered();
+  var box = document.getElementById("list");
+  if (shown === 0) box.innerHTML = "";
+  var end = Math.min(rows.length, shown + LIMIT);
+  for (var i = shown; i < end; i++){
+    var r = rows[i];
+    var div = document.createElement("div");
+    div.className = "row";
+    var extra = r.balance ? '积分 <span class="score">' + esc(String(r.balance).split(".")[0]) + "</span>" : "";
+    div.innerHTML =
+      '<div class="top"><span class="phone">' + esc(r.phone) + "</span>" + tag(r) + "</div>" +
+      '<div class="mid">' + esc(r.tasks) + (extra ? " · " + extra : "") +
+      (r.time ? " · " + esc(r.time) : "") + "</div>";
+    box.appendChild(div);
+  }
+  shown = end;
+  var more = document.getElementById("more");
+  if (more) more.remove();
+  if (shown < rows.length){
+    var b = document.createElement("div");
+    b.id = "more";
+    b.className = "foot";
+    b.style.cssText = "padding:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;cursor:pointer";
+    b.textContent = "还有 " + (rows.length - shown) + " 条，点这里加载更多";
+    b.onclick = function(){ render(false); };
+    box.appendChild(b);
+  }
+}
+
+function refresh(){
+  fetch("data.json?t=" + Date.now(), { cache: "no-store" })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      DATA = d;
+      document.getElementById("upd").textContent = d.updated;
+      document.getElementById("n-total").textContent = d.total;
+      document.getElementById("n-done").textContent  = d.done;
+      document.getElementById("n-fail").textContent  = d.fail;
+      document.getElementById("n-rest").textContent  = d.rest;
+      var pct = d.total ? Math.round((d.done + d.fail) * 100 / d.total) : 0;
+      document.getElementById("bar").style.width = pct + "%";
+      render(true);
+    })
+    .catch(function(){ document.getElementById("upd").textContent = "连接失败，重试中…"; });
+}
+
+/* ---------- 密码门禁（密码：hyl200168） ---------- */
+var PASS = "hyl200168";
+function show(){
+  document.getElementById("login").classList.add("hide");
+  document.getElementById("main").classList.remove("hide");
+  refresh();
+  setInterval(refresh, 5000);
+}
+function doLogin(){
+  if (document.getElementById("pw").value === PASS){
+    try { localStorage.setItem("vb_ok", "1"); } catch(e){}
+    show();
+  } else {
+    document.getElementById("err").textContent = "密码不对，请重试";
+  }
+}
+function logout(){
+  try { localStorage.removeItem("vb_ok"); } catch(e){}
+  location.reload();
+}
+document.getElementById("pw").addEventListener("keydown", function(e){
+  if (e.key === "Enter") doLogin();
+});
+try { if (localStorage.getItem("vb_ok") === "1") show(); } catch(e){}
+</script>
+</body>
+</html>
