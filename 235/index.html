@@ -177,7 +177,7 @@
     <div class="list" id="plist"></div>
   </section>
 
-  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018d</div>
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018e</div>
 </div>
 
 <div id="dlg" class="hide">
@@ -196,8 +196,9 @@
 <script>
 /* ================= 配置 ================= */
 var PASS = "200168";
-/* 已发状态：getpantry 做持久化，ntfy.sh 做实时推送（秒级同步到所有设备）。*/
-var PANTRY_BASE = "https://getpantry.cloud/apiv1/pantry/71c6ea9d-ea91-4df6-83e1-c93b2dd3a7de/basket/sent2";
+/* 已发状态：Supabase 做持久化（PostgREST），ntfy.sh 做实时推送。*/
+var SUPA = "https://mnwhaeafxgcxetmsbhnt.supabase.co";
+var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ud2hhZWFmeGdjeGV0bXNiaG50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MDIzNDEsImV4cCI6MjEwNzI3ODM0MX0.0ue-quPd4J1wS5uwOksDB8UaJET73aXLKU_eQxI9y3Q";
 var NTFY = "https://ntfy.sh/vobile_sent_v2_9k4m2x7q";
 
 /* ================= 状态 ================= */
@@ -211,7 +212,7 @@ function esc(s){ return String(s == null ? "" : s)
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function isSent(p){ return SENT[p] === true; }
 
-/* ================= 云端：已发表（getpantry，任意设备免设置可读写） ================= */
+/* ================= 云端：已发（Supabase PostgREST，任意设备免设置读写） ================= */
 function _pfetch(url, opt, tries, wait){
   function retry(){
     return new Promise(function(res){ setTimeout(res, wait); })
@@ -227,25 +228,32 @@ function _pfetch(url, opt, tries, wait){
   });
 }
 
+function supaHead(extra){
+  var h = { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY, "Accept": "application/json" };
+  if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) h[k] = extra[k];
+  return h;
+}
+
 function sentLoad(full){
-  return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 3, 4000)
+  return _pfetch(SUPA + "/rest/v1/sent?select=phone&limit=100000",
+                 { headers: supaHead(), cache: "no-store" }, 3, 3000)
     .then(function(r){
-      if (r.status === 400 || r.status === 404) return null;
       if (!r.ok) throw new Error("read " + r.status);
       return r.json();
     })
-    .then(function(j){
-      var arr = (j && j.phones) ? j.phones : [];
+    .then(function(rows){
+      var arr = [];
+      (rows || []).forEach(function(x){ if (x && x.phone) arr.push(x.phone); });
       if (full){
-        // 冷启动：以云端为准，但保住本会话刚改、还没落库的号
+        // 冷启动：以云端为准，但保住本会话刚改、还没落库的改动
         var m = {};
-        (arr||[]).forEach(function(p){ if (p && !_removed[p]) m[p] = true; });
-        if (_dirty) Object.keys(SENT).forEach(function(p){ m[p] = true; });
+        arr.forEach(function(p){ if (!_pendingDel[p]) m[p] = true; });
+        Object.keys(_pendingAdd).forEach(function(p){ m[p] = true; });
         SENT = m;
         _synced = true;
       } else {
-        // 运行中：只合并云端新增，绝不用云端“缺少”来删掉本地的号
-        (arr||[]).forEach(function(p){ if (p && !_removed[p] && !SENT[p]) SENT[p] = true; });
+        // 运行中：只合并云端新增，不用云端“缺少”来删本地
+        arr.forEach(function(p){ if (!_pendingDel[p] && !SENT[p]) SENT[p] = true; });
       }
       document.getElementById("dot").classList.remove("off");
     })
@@ -253,48 +261,62 @@ function sentLoad(full){
 }
 
 var _dirty = false;
-var _removed = {};   // 本会话删掉的号，合并写时不要把云端旧值又加回来
-function flushSent(){
-  if (!_dirty) return;
-  sentSave(true).catch(function(){});
+var _pendingAdd = {};   // 待上传的新增号
+var _pendingDel = {};   // 待删除的号
+
+function sentPush(phones){
+  if (!phones || !phones.length) return Promise.resolve();
+  return _pfetch(SUPA + "/rest/v1/sent", {
+    method: "POST",
+    headers: supaHead({ "Content-Type": "application/json",
+                        "Prefer": "resolution=ignore-duplicates,return=minimal" }),
+    body: JSON.stringify(phones.map(function(p){ return { phone: p }; }))
+  }, 4, 2500).then(function(r){
+    if (!r.ok) throw new Error("write " + r.status);
+    return r.text();
+  });
 }
-function sentSave(merge){
-  function doWrite(arr){
-    return _pfetch(PANTRY_BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phones: arr })
-    }, 4, 3000).then(function(r){
-      if (!r.ok) throw new Error("write " + r.status);
-      return r.text();
-    });
-  }
-  var p;
-  if (!merge) p = doWrite(Object.keys(SENT));
-  else p = _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 3, 3000)
-    .then(function(r){ return r.ok ? r.json() : null; })
-    .catch(function(){ return null; })
-    .then(function(cur){
-      if (cur && cur.phones) cur.phones.forEach(function(p){
-        if (p && !_removed[p]) SENT[p] = true;
-      });
-      return doWrite(Object.keys(SENT));
-    });
-  return p.then(function(r){ _dirty = false; _removed = {}; return r; },
-                function(e){ _dirty = true; throw e; });
+
+function sentDelete(phone){
+  return _pfetch(SUPA + "/rest/v1/sent?phone=eq." + encodeURIComponent(phone), {
+    method: "DELETE",
+    headers: supaHead({ "Prefer": "return=minimal" })
+  }, 4, 2500).then(function(r){
+    if (!r.ok) throw new Error("del " + r.status);
+    return r.text();
+  });
+}
+
+function flushSent(){
+  var adds = Object.keys(_pendingAdd);
+  var dels = Object.keys(_pendingDel);
+  if (!adds.length && !dels.length){ _dirty = false; return Promise.resolve(); }
+  _dirty = true;
+  var jobs = [];
+  if (adds.length) jobs.push(
+    sentPush(adds).then(function(){ adds.forEach(function(p){ delete _pendingAdd[p]; }); })
+                 .catch(function(){})
+  );
+  dels.forEach(function(p){
+    jobs.push(sentDelete(p).then(function(){ delete _pendingDel[p]; }).catch(function(){}));
+  });
+  return Promise.all(jobs).then(function(){
+    _dirty = (Object.keys(_pendingAdd).length > 0 || Object.keys(_pendingDel).length > 0);
+  });
 }
 
 function sentAdd(phones){
-  (phones||[]).forEach(function(p){ SENT[p] = true; });
-  sentPublish({ op: "add", phones: phones || [] });
-  return sentSave(true);
+  phones = phones || [];
+  phones.forEach(function(p){ SENT[p] = true; _pendingAdd[p] = true; delete _pendingDel[p]; });
+  sentPublish({ op: "add", phones: phones });
+  return flushSent();
 }
 
 function sentRemove(phone){
   delete SENT[phone];
-  _removed[phone] = true;
+  _pendingDel[phone] = true; delete _pendingAdd[phone];
   sentPublish({ op: "remove", phone: phone });
-  return sentSave(false);
+  return flushSent();
 }
 
 /* ================= 实时通道（ntfy.sh） ================= */
