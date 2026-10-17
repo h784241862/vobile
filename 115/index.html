@@ -177,7 +177,7 @@
     <div class="list" id="plist"></div>
   </section>
 
-  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看</div>
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018c</div>
 </div>
 
 <div id="dlg" class="hide">
@@ -227,7 +227,7 @@ function _pfetch(url, opt, tries, wait){
   });
 }
 
-function sentLoad(){
+function sentLoad(full){
   return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 3, 4000)
     .then(function(r){
       if (r.status === 400 || r.status === 404) return null;
@@ -236,9 +236,17 @@ function sentLoad(){
     })
     .then(function(j){
       var arr = (j && j.phones) ? j.phones : [];
-      var m = {};
-      (arr||[]).forEach(function(p){ if (p) m[p] = true; });
-      SENT = m;
+      if (full){
+        // 冷启动：以云端为准，但保住本会话刚改、还没落库的号
+        var m = {};
+        (arr||[]).forEach(function(p){ if (p && !_removed[p]) m[p] = true; });
+        if (_dirty) Object.keys(SENT).forEach(function(p){ m[p] = true; });
+        SENT = m;
+        _synced = true;
+      } else {
+        // 运行中：只合并云端新增，绝不用云端“缺少”来删掉本地的号
+        (arr||[]).forEach(function(p){ if (p && !_removed[p] && !SENT[p]) SENT[p] = true; });
+      }
       document.getElementById("dot").classList.remove("off");
     })
     .catch(function(){ document.getElementById("dot").classList.add("off"); });
@@ -516,12 +524,14 @@ function refreshData(){
     })
     .catch(function(){ document.getElementById("upd").textContent = "进度连接失败"; });
 }
+var _synced = false;
 var _lastSentLoad = 0;
-function refreshSent(force){
-  if (document.visibilityState === "hidden" && !force) return Promise.resolve();
-  if (!force && Date.now() - _lastSentLoad < 10000) return Promise.resolve();
+function refreshSent(full){
+  if (document.visibilityState === "hidden" && !full) return Promise.resolve();
+  if (_dirty && !full) return Promise.resolve();   // 本地有还没落库的改动，先别让云端覆盖
+  if (!full && Date.now() - _lastSentLoad < 10000) return Promise.resolve();
   _lastSentLoad = Date.now();
-  return sentLoad().then(function(){ renderIssue(true); });
+  return sentLoad(full).then(function(){ renderIssue(true); });
 }
 function refreshAll(){ refreshData(); refreshSent(true); }
 
