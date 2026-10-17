@@ -177,7 +177,7 @@
     <div class="list" id="plist"></div>
   </section>
 
-  <div class="foot">数据由电脑端上传 · 发号状态存云端 · 每 5 秒自动刷新 · 电脑关机也能看</div>
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看</div>
 </div>
 
 <div id="dlg" class="hide">
@@ -196,8 +196,9 @@
 <script>
 /* ================= 配置 ================= */
 var PASS = "200168";
-/* 已发状态存在云端 getpantry（任意设备打开即可读写，无需设置）。*/
+/* 已发状态：getpantry 做持久化，ntfy.sh 做实时推送（秒级同步到所有设备）。*/
 var PANTRY_BASE = "https://getpantry.cloud/apiv1/pantry/71c6ea9d-ea91-4df6-83e1-c93b2dd3a7de/basket/sent";
+var NTFY = "https://ntfy.sh/vobile_sent_9f3k2m7q";
 
 /* ================= 状态 ================= */
 var DATA = { rows: [], total: 0, done: 0, fail: 0, rest: 0, updated: "-" };
@@ -238,26 +239,72 @@ function sentLoad(){
     .catch(function(){ document.getElementById("dot").classList.add("off"); });
 }
 
-function sentSave(){
-  var arr = Object.keys(SENT);
-  return _pfetch(PANTRY_BASE, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phones: arr })
-  }, 5, 3000).then(function(r){
-    if (!r.ok) throw new Error("write " + r.status);
-    return r.text();
-  });
+function sentSave(merge){
+  function doWrite(arr){
+    return _pfetch(PANTRY_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phones: arr })
+    }, 5, 3000).then(function(r){
+      if (!r.ok) throw new Error("write " + r.status);
+      return r.text();
+    });
+  }
+  if (!merge) return doWrite(Object.keys(SENT));
+  // 合并写：先读云端，把别人刚发的号并进来，避免互相覆盖
+  return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 2, 3000)
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .catch(function(){ return null; })
+    .then(function(cur){
+      if (cur && cur.phones) cur.phones.forEach(function(p){ if (p) SENT[p] = true; });
+      return doWrite(Object.keys(SENT));
+    });
 }
 
 function sentAdd(phones){
   (phones||[]).forEach(function(p){ SENT[p] = true; });
-  return sentSave();
+  sentPublish({ op: "add", phones: phones || [] });
+  return sentSave(true);
 }
 
 function sentRemove(phone){
   delete SENT[phone];
-  return sentSave();
+  sentPublish({ op: "remove", phone: phone });
+  return sentSave(false);
+}
+
+/* ================= 实时通道（ntfy.sh） ================= */
+function applyEvent(ev){
+  if (!ev || !ev.op) return;
+  if (ev.op === "add" && ev.phones) ev.phones.forEach(function(p){ if (p) SENT[p] = true; });
+  else if (ev.op === "remove" && ev.phone) delete SENT[ev.phone];
+  else if (ev.op === "set" && ev.phones){ SENT = {}; ev.phones.forEach(function(p){ if (p) SENT[p] = true; }); }
+  else return;
+  renderIssue(true);
+}
+
+function sentPublish(obj){
+  try {
+    fetch(NTFY, { method: "POST", headers: { "Content-Type": "text/plain" },
+                  body: JSON.stringify(obj) }).catch(function(){});
+  } catch(e){}
+}
+
+function sentSubscribe(){
+  try {
+    if (window.__es) { try { window.__es.close(); } catch(e){} }
+    var es = new EventSource(NTFY + "/sse");
+    window.__es = es;
+    es.onopen = function(){ document.getElementById("dot").classList.remove("off"); refreshSent(); };
+    es.onmessage = function(e){
+      try {
+        var outer = JSON.parse(e.data);
+        if (outer.event !== "message" || !outer.message) return;
+        applyEvent(JSON.parse(outer.message));
+      } catch(err){}
+    };
+    es.onerror = function(){ document.getElementById("dot").classList.add("off"); };
+  } catch(e){}
 }
 
 /* ================= 任务进度 ================= */
@@ -455,21 +502,25 @@ function refreshData(){
     })
     .catch(function(){ document.getElementById("upd").textContent = "进度连接失败"; });
 }
-function refreshSent(){
-  if (document.visibilityState === "hidden") return;
+var _lastSentLoad = 0;
+function refreshSent(force){
+  if (document.visibilityState === "hidden" && !force) return Promise.resolve();
+  if (!force && Date.now() - _lastSentLoad < 10000) return Promise.resolve();
+  _lastSentLoad = Date.now();
   return sentLoad().then(function(){ renderIssue(true); });
 }
-function refreshAll(){ refreshData(); refreshSent(); }
+function refreshAll(){ refreshData(); refreshSent(true); }
 
 /* ================= 密码门禁 ================= */
 function show(){
   document.getElementById("login").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
   refreshAll();
+  sentSubscribe();
   setInterval(refreshData, 5000);
-  setInterval(refreshSent, 120000);
+  setInterval(refreshSent, 60000);
   document.addEventListener("visibilitychange", function(){
-    if (document.visibilityState === "visible") refreshSent();
+    if (document.visibilityState === "visible") refreshSent(true);
   });
 }
 function doLogin(){
