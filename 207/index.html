@@ -177,7 +177,7 @@
     <div class="list" id="plist"></div>
   </section>
 
-  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018c</div>
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018d</div>
 </div>
 
 <div id="dlg" class="hide">
@@ -197,8 +197,8 @@
 /* ================= 配置 ================= */
 var PASS = "200168";
 /* 已发状态：getpantry 做持久化，ntfy.sh 做实时推送（秒级同步到所有设备）。*/
-var PANTRY_BASE = "https://getpantry.cloud/apiv1/pantry/71c6ea9d-ea91-4df6-83e1-c93b2dd3a7de/basket/sent";
-var NTFY = "https://ntfy.sh/vobile_sent_9f3k2m7q";
+var PANTRY_BASE = "https://getpantry.cloud/apiv1/pantry/71c6ea9d-ea91-4df6-83e1-c93b2dd3a7de/basket/sent2";
+var NTFY = "https://ntfy.sh/vobile_sent_v2_9k4m2x7q";
 
 /* ================= 状态 ================= */
 var DATA = { rows: [], total: 0, done: 0, fail: 0, rest: 0, updated: "-" };
@@ -298,20 +298,34 @@ function sentRemove(phone){
 }
 
 /* ================= 实时通道（ntfy.sh） ================= */
+var _riTimer = null;
+function renderIssueSoon(){
+  if (_riTimer) return;
+  _riTimer = setTimeout(function(){ _riTimer = null; renderIssue(true); }, 150);
+}
 function applyEvent(ev){
   if (!ev || !ev.op) return;
   if (ev.op === "add" && ev.phones) ev.phones.forEach(function(p){ if (p) SENT[p] = true; });
   else if (ev.op === "remove" && ev.phone) delete SENT[ev.phone];
   else if (ev.op === "set" && ev.phones){ SENT = {}; ev.phones.forEach(function(p){ if (p) SENT[p] = true; }); }
   else return;
-  renderIssue(true);
+  renderIssueSoon();
 }
 
+var PUB_CHUNK = 100;   // ntfy 免费版单条消息上限 4KB，超出会被静默丢弃，故分片
 function sentPublish(obj){
-  try {
-    fetch(NTFY, { method: "POST", headers: { "Content-Type": "text/plain" },
-                  body: JSON.stringify(obj) }).catch(function(){});
-  } catch(e){}
+  var parts = [obj];
+  if (obj.op === "add" && obj.phones && obj.phones.length > PUB_CHUNK){
+    parts = [];
+    for (var i = 0; i < obj.phones.length; i += PUB_CHUNK)
+      parts.push({ op: "add", phones: obj.phones.slice(i, i + PUB_CHUNK) });
+  }
+  parts.forEach(function(p){
+    try {
+      fetch(NTFY, { method: "POST", headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify(p) }).catch(function(){});
+    } catch(e){}
+  });
 }
 
 function sentSubscribe(){
