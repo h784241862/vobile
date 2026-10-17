@@ -196,11 +196,28 @@
 <script>
 /* ================= 配置 ================= */
 var PASS = "200168";
-var SB_URL = "https://mnwhaeafxgcxetmsbhnt.supabase.co";
-var SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ud2hhZWFmeGdjeGV0bXNiaG50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MDIzNDEsImV4cCI6MjEwNzI3ODM0MX0.0ue-quPd4J1wS5uwOksDB8UaJET73aXLKU_eQxI9y3Q";
-var SENT_API = SB_URL + "/rest/v1/sent";
-var SB_HEADERS = { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY,
-                   "Content-Type": "application/json" };
+/* 已发状态用 GitHub 仓库文件存储（Supabase 在当前网络不可达）。
+   令牌只保存在本机浏览器，不写进仓库。首次用 ?settoken=xxx 访问一次即可。*/
+var GH_REPO = "h784241862/vobile";
+var GH_FILE = "sent.json";
+var GH_TOKEN = "";
+var SENT_SHA = "";
+(function(){
+  try {
+    var m = location.search.match(/[?&]settoken=([^&]+)/);
+    if (m){ GH_TOKEN = decodeURIComponent(m[1]).trim(); localStorage.setItem("vb_gh_token", GH_TOKEN); }
+    else { GH_TOKEN = localStorage.getItem("vb_gh_token") || ""; }
+  } catch(e){}
+})();
+function ghHead(){ return { "Authorization": "Bearer " + GH_TOKEN, "Accept": "application/vnd.github+json" }; }
+function needToken(){
+  if (GH_TOKEN) return true;
+  try {
+    var t = prompt("首次使用：请粘贴 GitHub 令牌（只存在本机浏览器，不会上传）");
+    if (t){ GH_TOKEN = t.trim(); localStorage.setItem("vb_gh_token", GH_TOKEN); return true; }
+  } catch(e){}
+  return false;
+}
 
 /* ================= 状态 ================= */
 var DATA = { rows: [], total: 0, done: 0, fail: 0, rest: 0, updated: "-" };
@@ -214,31 +231,66 @@ function esc(s){ return String(s == null ? "" : s)
 function isSent(p){ return SENT[p] === true; }
 
 /* ================= 云端：已发表 ================= */
+function _b64dec(s){
+  try { return decodeURIComponent(escape(atob(String(s||"").replace(/\s/g,"")))); }
+  catch(e){ return ""; }
+}
+function _b64enc(s){
+  return btoa(unescape(encodeURIComponent(s)));
+}
+
 function sentLoad(){
-  return fetch(SENT_API + "?select=phone", { headers: SB_HEADERS, cache:"no-store" })
-    .then(function(r){ if(!r.ok) throw new Error("read "+r.status); return r.json(); })
-    .then(function(arr){
-      var m = {};
-      (arr||[]).forEach(function(x){ m[x.phone] = true; });
-      SENT = m;
+  if (!needToken()){ document.getElementById("dot").classList.add("off"); return Promise.resolve(); }
+  return fetch("https://api.github.com/repos/" + GH_REPO + "/contents/" + GH_FILE + "?t=" + Date.now(),
+               { headers: ghHead(), cache: "no-store" })
+    .then(function(r){
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error("read " + r.status);
+      return r.json();
+    })
+    .then(function(j){
+      if (!j){ SENT_SHA = ""; SENT = {}; }
+      else {
+        SENT_SHA = j.sha || "";
+        var arr = [];
+        try { arr = JSON.parse(_b64dec(j.content) || "[]"); } catch(e){ arr = []; }
+        var m = {};
+        (arr||[]).forEach(function(p){ m[p] = true; });
+        SENT = m;
+      }
       document.getElementById("dot").classList.remove("off");
     })
     .catch(function(){ document.getElementById("dot").classList.add("off"); });
 }
 
-function sentAdd(phones){
-  var body = phones.map(function(p){ return { phone:p }; });
-  return fetch(SENT_API, {
-    method:"POST",
-    headers: Object.assign({ "Prefer":"resolution=merge-duplicates,return=minimal" }, SB_HEADERS),
+function sentSave(retry){
+  if (!needToken()) return Promise.reject(new Error("no token"));
+  var arr = Object.keys(SENT);
+  var body = { message: "update sent (" + arr.length + ")", content: _b64enc(JSON.stringify(arr)) };
+  if (SENT_SHA) body.sha = SENT_SHA;
+  return fetch("https://api.github.com/repos/" + GH_REPO + "/contents/" + GH_FILE, {
+    method: "PUT",
+    headers: Object.assign({ "Content-Type": "application/json" }, ghHead()),
     body: JSON.stringify(body)
-  }).then(function(r){ if(!r.ok) throw new Error("write "+r.status); });
+  }).then(function(r){
+    if (r.status === 409 && !retry){
+      return sentLoad().then(function(){ return sentSave(true); });
+    }
+    if (!r.ok) throw new Error("write " + r.status);
+    return r.json();
+  }).then(function(j){
+    if (j && j.content) SENT_SHA = j.content.sha;
+  });
+}
+
+function sentAdd(phones){
+  (phones||[]).forEach(function(p){ SENT[p] = true; });
+  return sentSave(false);
 }
 
 function sentRemove(phone){
-  return fetch(SENT_API + "?phone=eq." + encodeURIComponent(phone),
-    { method:"DELETE", headers: Object.assign({ "Prefer":"return=minimal" }, SB_HEADERS) })
-    .then(function(r){ if(!r.ok) throw new Error("del "+r.status); });
+  delete SENT[phone];
+  return sentSave(false);
 }
 
 /* ================= 任务进度 ================= */
