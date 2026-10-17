@@ -456,7 +456,10 @@ function refreshData(){
     })
     .catch(function(){ document.getElementById("upd").textContent = "进度连接失败"; });
 }
-function refreshSent(){ sentLoad().then(function(){ renderIssue(true); }); }
+function refreshSent(){
+  if (document.visibilityState === "hidden") return;
+  return sentLoad().then(function(){ renderIssue(true); });
+}
 function refreshAll(){ refreshData(); refreshSent(); }
 
 /* ================= 密码门禁 ================= */
@@ -465,7 +468,10 @@ function show(){
   document.getElementById("app").classList.remove("hide");
   refreshAll();
   setInterval(refreshData, 5000);
-  setInterval(refreshSent, 60000);
+  setInterval(refreshSent, 120000);
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible") refreshSent();
+  });
 }
 function doLogin(){
   if (document.getElementById("pw").value === PASS){
