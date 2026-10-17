@@ -198,26 +198,7 @@
 var PASS = "200168";
 /* 已发状态存在 GitHub 仓库文件里（Supabase 在当前网络不可达）。
    令牌存在本机浏览器：首次用 ?settoken=xxx 打开一次即可，之后一直生效。*/
-var GH_REPO = "h784241862/vobile";
-var GH_FILE = "sent.json";
-var GH_TOKEN = "";
-var SENT_SHA = "";
-(function(){
-  try {
-    var m = location.search.match(/[?&]settoken=([^&]+)/);
-    if (m){ GH_TOKEN = decodeURIComponent(m[1]).trim(); localStorage.setItem("vb_gh_token", GH_TOKEN); }
-    else { GH_TOKEN = localStorage.getItem("vb_gh_token") || ""; }
-  } catch(e){}
-})();
-function ghHead(){ return { "Authorization": "Bearer " + GH_TOKEN, "Accept": "application/vnd.github+json" }; }
-function needToken(){
-  if (GH_TOKEN) return true;
-  try {
-    var t = prompt("首次使用：请粘贴 GitHub 令牌（只存在本机浏览器，不会上传）");
-    if (t){ GH_TOKEN = t.trim(); localStorage.setItem("vb_gh_token", GH_TOKEN); return true; }
-  } catch(e){}
-  return false;
-}
+var PANTRY_BASE = "https://getpantry.cloud/apiv1/pantry/71c6ea9d-ea91-4df6-83e1-c93b2dd3a7de/basket/sent";
 
 /* ================= 状态 ================= */
 var DATA = { rows: [], total: 0, done: 0, fail: 0, rest: 0, updated: "-" };
@@ -230,66 +211,44 @@ function esc(s){ return String(s == null ? "" : s)
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function isSent(p){ return SENT[p] === true; }
 
-/* ================= 云端：已发表 ================= */
-function _b64dec(s){
-  try { return decodeURIComponent(escape(atob(String(s||"").replace(/\s/g,"")))); }
-  catch(e){ return ""; }
-}
-function _b64enc(s){
-  return btoa(unescape(encodeURIComponent(s)));
-}
-
+/* ================= 云端：已发表（getpantry，任意设备免设置可读写） ================= */
 function sentLoad(){
-  return fetch("https://api.github.com/repos/" + GH_REPO + "/contents/" + GH_FILE + "?t=" + Date.now(),
-               { headers: { "Accept": "application/vnd.github+json" }, cache: "no-store" })
+  return fetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" })
     .then(function(r){
-      if (r.status === 404) return null;
+      if (r.status === 400 || r.status === 404) return null;
       if (!r.ok) throw new Error("read " + r.status);
       return r.json();
     })
     .then(function(j){
-      if (!j){ SENT_SHA = ""; SENT = {}; }
-      else {
-        SENT_SHA = j.sha || "";
-        var arr = [];
-        try { arr = JSON.parse(_b64dec(j.content) || "[]"); } catch(e){ arr = []; }
-        var m = {};
-        (arr||[]).forEach(function(p){ m[p] = true; });
-        SENT = m;
-      }
+      var arr = (j && j.phones) ? j.phones : [];
+      var m = {};
+      (arr||[]).forEach(function(p){ if (p) m[p] = true; });
+      SENT = m;
       document.getElementById("dot").classList.remove("off");
     })
     .catch(function(){ document.getElementById("dot").classList.add("off"); });
 }
 
-function sentSave(retry){
-  if (!needToken()) return Promise.reject(new Error("no token"));
+function sentSave(){
   var arr = Object.keys(SENT);
-  var body = { message: "update sent (" + arr.length + ")", content: _b64enc(JSON.stringify(arr)) };
-  if (SENT_SHA) body.sha = SENT_SHA;
-  return fetch("https://api.github.com/repos/" + GH_REPO + "/contents/" + GH_FILE, {
-    method: "PUT",
-    headers: Object.assign({ "Content-Type": "application/json" }, ghHead()),
-    body: JSON.stringify(body)
+  return fetch(PANTRY_BASE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phones: arr })
   }).then(function(r){
-    if (r.status === 409 && !retry){
-      return sentLoad().then(function(){ return sentSave(true); });
-    }
     if (!r.ok) throw new Error("write " + r.status);
-    return r.json();
-  }).then(function(j){
-    if (j && j.content) SENT_SHA = j.content.sha;
+    return r.text();
   });
 }
 
 function sentAdd(phones){
   (phones||[]).forEach(function(p){ SENT[p] = true; });
-  return sentSave(false);
+  return sentSave();
 }
 
 function sentRemove(phone){
   delete SENT[phone];
-  return sentSave(false);
+  return sentSave();
 }
 
 /* ================= 任务进度 ================= */
@@ -477,7 +436,7 @@ function switchTab(t){
 }
 
 /* ================= 刷新 ================= */
-function refreshAll(){
+function refreshData(){
   fetch("data235.json?t=" + Date.now(), { cache:"no-store" })
     .then(function(r){ return r.json(); })
     .then(function(d){
@@ -486,15 +445,17 @@ function refreshAll(){
       renderIssue(true); renderProgress(true);
     })
     .catch(function(){ document.getElementById("upd").textContent = "进度连接失败"; });
-  sentLoad().then(function(){ renderIssue(true); });
 }
+function refreshSent(){ sentLoad().then(function(){ renderIssue(true); }); }
+function refreshAll(){ refreshData(); refreshSent(); }
 
 /* ================= 密码门禁 ================= */
 function show(){
   document.getElementById("login").classList.add("hide");
   document.getElementById("app").classList.remove("hide");
   refreshAll();
-  setInterval(refreshAll, 5000);
+  setInterval(refreshData, 5000);
+  setInterval(refreshSent, 60000);
 }
 function doLogin(){
   if (document.getElementById("pw").value === PASS){
