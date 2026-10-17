@@ -213,12 +213,17 @@ function isSent(p){ return SENT[p] === true; }
 
 /* ================= 云端：已发表（getpantry，任意设备免设置可读写） ================= */
 function _pfetch(url, opt, tries, wait){
+  function retry(){
+    return new Promise(function(res){ setTimeout(res, wait); })
+      .then(function(){ return _pfetch(url, opt, tries - 1, wait * 2); });
+  }
   return fetch(url, opt).then(function(r){
-    if (r.status === 429 && tries > 0){
-      return new Promise(function(res){ setTimeout(res, wait); })
-        .then(function(){ return _pfetch(url, opt, tries - 1, wait * 2); });
-    }
+    // 429 时服务端不回 CORS 头，浏览器可能直接抛异常；两种都重试
+    if (r.status === 429 && tries > 0) return retry();
     return r;
+  }, function(){
+    if (tries > 0) return retry();
+    throw new Error("network");
   });
 }
 
@@ -239,26 +244,33 @@ function sentLoad(){
     .catch(function(){ document.getElementById("dot").classList.add("off"); });
 }
 
+var _dirty = false;
+function flushSent(){
+  if (!_dirty) return;
+  sentSave(true).catch(function(){});
+}
 function sentSave(merge){
   function doWrite(arr){
     return _pfetch(PANTRY_BASE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phones: arr })
-    }, 5, 3000).then(function(r){
+    }, 4, 3000).then(function(r){
       if (!r.ok) throw new Error("write " + r.status);
       return r.text();
     });
   }
-  if (!merge) return doWrite(Object.keys(SENT));
-  // 合并写：先读云端，把别人刚发的号并进来，避免互相覆盖
-  return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 2, 3000)
+  var p;
+  if (!merge) p = doWrite(Object.keys(SENT));
+  else p = _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 3, 3000)
     .then(function(r){ return r.ok ? r.json() : null; })
     .catch(function(){ return null; })
     .then(function(cur){
       if (cur && cur.phones) cur.phones.forEach(function(p){ if (p) SENT[p] = true; });
       return doWrite(Object.keys(SENT));
     });
+  return p.then(function(r){ _dirty = false; return r; },
+                function(e){ _dirty = true; throw e; });
 }
 
 function sentAdd(phones){
@@ -432,21 +444,19 @@ function issue(){
   renderIssue(true);
   showDlg(take);
   sentAdd(take).then(function(){
-    toast("已发 " + take.length + " 个，已同步云端");
+    toast("已发 " + take.length + " 个，已同步");
   }).catch(function(){
-    take.forEach(function(p){ delete SENT[p]; });
-    renderIssue(true);
-    toast("同步失败，请检查网络后重试");
+    toast("已发 " + take.length + " 个（云端同步中…）");
   });
 }
 
 function toggle(p){
   if (isSent(p)){
     delete SENT[p]; renderIssue(true); toast("已改回未发");
-    sentRemove(p).catch(function(){ SENT[p] = true; renderIssue(true); toast("同步失败"); });
+    sentRemove(p).catch(function(){ toast("已改回未发（云端同步中…）"); });
   } else {
     SENT[p] = true; renderIssue(true); toast("已标记为已发");
-    sentAdd([p]).catch(function(){ delete SENT[p]; renderIssue(true); toast("同步失败"); });
+    sentAdd([p]).catch(function(){ toast("已标记为已发（云端同步中…）"); });
   }
 }
 
@@ -519,6 +529,7 @@ function show(){
   sentSubscribe();
   setInterval(refreshData, 5000);
   setInterval(refreshSent, 60000);
+  setInterval(flushSent, 20000);
   document.addEventListener("visibilitychange", function(){
     if (document.visibilityState === "visible") refreshSent(true);
   });
