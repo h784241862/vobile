@@ -223,7 +223,7 @@ function _pfetch(url, opt, tries, wait){
 }
 
 function sentLoad(){
-  return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 2, 3000)
+  return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 3, 4000)
     .then(function(r){
       if (r.status === 400 || r.status === 404) return null;
       if (!r.ok) throw new Error("read " + r.status);
@@ -245,7 +245,7 @@ function sentSave(){
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ phones: arr })
-  }, 3, 2000).then(function(r){
+  }, 5, 3000).then(function(r){
     if (!r.ok) throw new Error("write " + r.status);
     return r.text();
   });
