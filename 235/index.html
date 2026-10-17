@@ -212,8 +212,18 @@ function esc(s){ return String(s == null ? "" : s)
 function isSent(p){ return SENT[p] === true; }
 
 /* ================= 云端：已发表（getpantry，任意设备免设置可读写） ================= */
+function _pfetch(url, opt, tries, wait){
+  return fetch(url, opt).then(function(r){
+    if (r.status === 429 && tries > 0){
+      return new Promise(function(res){ setTimeout(res, wait); })
+        .then(function(){ return _pfetch(url, opt, tries - 1, wait * 2); });
+    }
+    return r;
+  });
+}
+
 function sentLoad(){
-  return fetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" })
+  return _pfetch(PANTRY_BASE + "?t=" + Date.now(), { cache: "no-store" }, 2, 3000)
     .then(function(r){
       if (r.status === 400 || r.status === 404) return null;
       if (!r.ok) throw new Error("read " + r.status);
@@ -231,11 +241,11 @@ function sentLoad(){
 
 function sentSave(){
   var arr = Object.keys(SENT);
-  return fetch(PANTRY_BASE, {
+  return _pfetch(PANTRY_BASE, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ phones: arr })
-  }).then(function(r){
+  }, 3, 2000).then(function(r){
     if (!r.ok) throw new Error("write " + r.status);
     return r.text();
   });
