@@ -245,6 +245,7 @@ function sentLoad(){
 }
 
 var _dirty = false;
+var _removed = {};   // 本会话删掉的号，合并写时不要把云端旧值又加回来
 function flushSent(){
   if (!_dirty) return;
   sentSave(true).catch(function(){});
@@ -266,10 +267,12 @@ function sentSave(merge){
     .then(function(r){ return r.ok ? r.json() : null; })
     .catch(function(){ return null; })
     .then(function(cur){
-      if (cur && cur.phones) cur.phones.forEach(function(p){ if (p) SENT[p] = true; });
+      if (cur && cur.phones) cur.phones.forEach(function(p){
+        if (p && !_removed[p]) SENT[p] = true;
+      });
       return doWrite(Object.keys(SENT));
     });
-  return p.then(function(r){ _dirty = false; return r; },
+  return p.then(function(r){ _dirty = false; _removed = {}; return r; },
                 function(e){ _dirty = true; throw e; });
 }
 
@@ -281,6 +284,7 @@ function sentAdd(phones){
 
 function sentRemove(phone){
   delete SENT[phone];
+  _removed[phone] = true;
   sentPublish({ op: "remove", phone: phone });
   return sentSave(false);
 }
@@ -528,7 +532,7 @@ function show(){
   refreshAll();
   sentSubscribe();
   setInterval(refreshData, 5000);
-  setInterval(refreshSent, 60000);
+  setInterval(refreshSent, 180000);
   setInterval(flushSent, 20000);
   document.addEventListener("visibilitychange", function(){
     if (document.visibilityState === "visible") refreshSent(true);
