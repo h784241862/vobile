@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1420">
+<title>Vobile 144 账号看板</title>
+<style>
+  :root { --bg:#0f1420; --card:#1a2133; --line:#2a3450; --txt:#e8edf7; --sub:#8b98b8;
+          --ok:#22c55e; --bad:#ef4444; --wait:#64748b; --blue:#3b82f6; --gold:#eab308; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:12px 12px 40px; }
+  h1 { font-size:18px; margin:4px 0 2px; }
+  .upd { color:var(--sub); font-size:12px; margin-bottom:10px; display:flex; align-items:center; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok);
+         margin-right:6px; animation:pulse 1.6s infinite; }
+  .dot.off { background:var(--bad); animation:none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+  a.logout { color:var(--sub); margin-left:auto; text-decoration:none; }
+
+  /* 标签页 */
+  .tabs { display:flex; background:var(--card); border:1px solid var(--line);
+          border-radius:12px; padding:4px; margin-bottom:10px; }
+  .tabs button { flex:1; padding:9px 0; border:0; background:none; color:var(--sub);
+                 font-size:15px; font-weight:700; border-radius:9px; }
+  .tabs button.on { background:var(--blue); color:#fff; }
+
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:10px 6px; text-align:center; }
+  .card .n { font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .card .t { font-size:11px; color:var(--sub); margin-top:2px; }
+  .bar { height:12px; background:var(--card); border:1px solid var(--line);
+         border-radius:8px; overflow:hidden; margin-bottom:12px; }
+  .bar > i { display:block; height:100%; width:0%; background:linear-gradient(90deg,#22c55e,#3b82f6);
+             transition:width .4s; }
+
+  /* 发放控制台 */
+  .issue { display:flex; gap:8px; margin-bottom:10px; }
+  .stepper { display:flex; align-items:center; border:1px solid var(--line); background:var(--card);
+             border-radius:10px; overflow:hidden; }
+  .stepper button { width:44px; height:44px; background:none; border:0; color:var(--txt);
+                    font-size:22px; font-weight:700; }
+  .stepper input { width:56px; height:44px; text-align:center; border:0;
+                   border-left:1px solid var(--line); border-right:1px solid var(--line);
+                   background:var(--card); color:var(--txt); font-size:18px; font-weight:700; }
+  .btn-issue { flex:1; height:46px; border:0; border-radius:10px; background:var(--blue);
+               color:#fff; font-size:16px; font-weight:700; }
+
+  .tools { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  input.q, select.f { background:var(--card); color:var(--txt); border:1px solid var(--line);
+                      border-radius:10px; padding:9px 12px; font-size:15px; }
+  input.q { flex:1; min-width:140px; }
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .row .top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .phone { font-size:17px; font-weight:700; letter-spacing:.5px; font-variant-numeric:tabular-nums; }
+  .tag { font-size:12px; padding:2px 9px; border-radius:999px; font-weight:700; white-space:nowrap; }
+  .t-ok { background:rgba(34,197,94,.16); color:var(--ok); }
+  .t-bad{ background:rgba(239,68,68,.16); color:var(--bad); }
+  .t-wait{ background:rgba(100,116,139,.18); color:var(--wait); }
+  .t-sent{ background:rgba(234,179,8,.18); color:var(--gold); }
+  .mid { margin-top:4px; font-size:13px; color:var(--sub); line-height:1.5; }
+  .score { color:var(--blue); font-weight:700; }
+  .act { margin-left:auto; border:1px solid var(--line); background:none; color:var(--txt);
+         font-size:13px; padding:6px 12px; border-radius:8px; font-weight:700; }
+  .act.send { border-color:var(--gold); color:var(--gold); }
+  .act.undo { border-color:var(--line); color:var(--sub); }
+  .foot { color:var(--sub); font-size:11px; margin-top:14px; text-align:center; }
+  .more { text-align:center; padding:14px; background:var(--card); border:1px solid var(--line);
+          border-radius:12px; color:var(--sub); font-size:13px; }
+
+  #login { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center;
+           justify-content:center; flex-direction:column; gap:14px; z-index:9; padding:20px; }
+  #login h2 { margin:0; font-size:20px; }
+  #login input { width:240px; text-align:center; flex:none; background:var(--card); color:var(--txt);
+                 border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:16px; }
+  #login button { padding:11px 26px; border-radius:10px; border:0; background:#2f6fed; color:#fff;
+                  font-size:16px; font-weight:700; }
+  .err { color:var(--bad); font-size:13px; min-height:18px; }
+  .hide { display:none !important; }
+
+  /* 弹层 */
+  #dlg { position:fixed; inset:0; background:rgba(6,10,20,.72); z-index:20;
+         display:flex; align-items:flex-end; justify-content:center; }
+  #dlg .sheet { background:var(--card); width:100%; max-width:560px; border-radius:16px 16px 0 0;
+                padding:16px; max-height:70vh; display:flex; flex-direction:column;
+                border:1px solid var(--line); border-bottom:0; }
+  #dlg h3 { margin:0 0 10px; font-size:16px; }
+  #dlg .body { overflow:auto; flex:1; }
+  #dlg .item { display:flex; justify-content:space-between; padding:9px 0;
+               border-bottom:1px solid var(--line); font-size:15px; }
+  #dlg .item .i { color:var(--sub); font-size:13px; }
+  #dlg .item .p { font-weight:700; font-variant-numeric:tabular-nums; }
+  #dlg .ops { display:flex; gap:8px; margin-top:12px; }
+  #dlg .ops button { flex:1; height:44px; border-radius:10px; border:1px solid var(--line);
+                     background:none; color:var(--txt); font-size:14px; font-weight:700; }
+  #dlg .ops button.primary { background:var(--blue); border-color:var(--blue); color:#fff; }
+
+  #toast { position:fixed; left:50%; bottom:28px; transform:translate(-50%,16px);
+           background:#000; color:#fff; padding:10px 18px; border-radius:10px; font-size:14px;
+           opacity:0; pointer-events:none; transition:.18s; z-index:30; max-width:90%; text-align:center; }
+  #toast.on { opacity:.92; transform:translate(-50%,0); }
+
+  @media (max-width:420px){ .cards{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Vobile 144 账号看板</h2>
+  <input id="pw" type="password" placeholder="请输入密码" inputmode="numeric">
+  <button onclick="doLogin()">登录</button>
+  <div class="err" id="err"></div>
+</div>
+
+<div class="wrap hide" id="app">
+  <h1>Vobile 144 账号看板</h1>
+  <div class="upd"><span class="dot" id="dot"></span><span id="syncmsg">云端连接中…</span> · <span id="upd">-</span>
+    <a href="#" class="logout" onclick="logout();return false">退出</a></div>
+
+  <div class="tabs">
+    <button id="tabbtn-issue" class="on" onclick="switchTab('issue')">发号</button>
+    <button id="tabbtn-progress" onclick="switchTab('progress')">任务进度</button>
+  </div>
+
+  <!-- ========== 发号 ========== -->
+  <section id="tab-issue">
+    <div class="cards">
+      <div class="card"><div class="n" id="i-total">-</div><div class="t">总号</div></div>
+      <div class="card"><div class="n" style="color:var(--gold)" id="i-sent">-</div><div class="t">已发</div></div>
+      <div class="card"><div class="n" style="color:var(--ok)" id="i-open">-</div><div class="t">未发</div></div>
+      <div class="card"><div class="n" style="color:var(--blue)" id="i-pct">-</div><div class="t">已发比例</div></div>
+    </div>
+    <div class="bar"><i id="i-bar"></i></div>
+
+    <div class="issue">
+      <div class="stepper">
+        <button type="button" onclick="stepQty(-1)">−</button>
+        <input id="qty" type="text" inputmode="numeric" value="1">
+        <button type="button" onclick="stepQty(1)">+</button>
+      </div>
+      <button class="btn-issue" onclick="issue()">发放号码</button>
+    </div>
+
+    <div class="tools">
+      <input id="iq" class="q" placeholder="搜索手机号…" inputmode="numeric">
+      <select id="if" class="f">
+        <option value="all">全部</option>
+        <option value="open">只看未发</option>
+        <option value="sent">只看已发</option>
+      </select>
+    </div>
+    <div class="list" id="ilist"></div>
+  </section>
+
+  <!-- ========== 进度 ========== -->
+  <section id="tab-progress" class="hide">
+    <div class="cards">
+      <div class="card"><div class="n" id="p-total">-</div><div class="t">总数</div></div>
+      <div class="card"><div class="n" style="color:var(--ok)" id="p-done">-</div><div class="t">已完成</div></div>
+      <div class="card"><div class="n" style="color:var(--bad)" id="p-fail">-</div><div class="t">失败</div></div>
+      <div class="card"><div class="n" style="color:var(--wait)" id="p-rest">-</div><div class="t">未跑</div></div>
+    </div>
+    <div class="bar"><i id="p-bar"></i></div>
+    <div class="tools">
+      <input id="pq" class="q" placeholder="搜索手机号…" inputmode="numeric">
+      <select id="pf" class="f">
+        <option value="all">全部</option>
+        <option value="ok">只看完成</option>
+        <option value="bad">只看未完成</option>
+        <option value="wait">只看未跑</option>
+      </select>
+    </div>
+    <div class="list" id="plist"></div>
+  </section>
+
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018g</div>
+</div>
+
+<div id="dlg" class="hide">
+  <div class="sheet">
+    <h3 id="dlg-t">本次发放</h3>
+    <div class="body" id="dlg-b"></div>
+    <div class="ops">
+      <button class="primary" onclick="copyTake()">复制全部</button>
+      <button onclick="closeDlg()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= 配置 ================= */
+var PASS = "200168";
+/* 已发状态：Supabase 做持久化（PostgREST），ntfy.sh 做实时推送。*/
+var SUPA = "https://mnwhaeafxgcxetmsbhnt.supabase.co";
+var SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ud2hhZWFmeGdjeGV0bXNiaG50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MDIzNDEsImV4cCI6MjEwNzI3ODM0MX0.0ue-quPd4J1wS5uwOksDB8UaJET73aXLKU_eQxI9y3Q";
+var NTFY = "https://ntfy.sh/vobile_sent_v2_9k4m2x7q";
+
+/* ================= 状态 ================= */
+var DATA = { rows: [], total: 0, done: 0, fail: 0, rest: 0, updated: "-" };
+var SENT = {};                 // { phone: true }
+var tab = "issue";
+var shownI = 0, shownP = 0, LIMIT = 200;
+var lastTake = [];
+
+function esc(s){ return String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function isSent(p){ return SENT[p] === true; }
+
+/* ================= 云端：已发（Supabase PostgREST，任意设备免设置读写） ================= */
+function _pfetch(url, opt, tries, wait){
+  function retry(){
+    return new Promise(function(res){ setTimeout(res, wait); })
+      .then(function(){ return _pfetch(url, opt, tries - 1, wait * 2); });
+  }
+  return fetch(url, opt).then(function(r){
+    // 429 时服务端不回 CORS 头，浏览器可能直接抛异常；两种都重试
+    if (r.status === 429 && tries > 0) return retry();
+    return r;
+  }, function(){
+    if (tries > 0) return retry();
+    throw new Error("network");
+  });
+}
+
+function supaHead(extra){
+  var h = { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY, "Accept": "application/json" };
+  if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) h[k] = extra[k];
+  return h;
+}
+
+function setSync(msg, ok){
+  try {
+    var el = document.getElementById("syncmsg");
+    if (el) el.textContent = msg;
+    var d = document.getElementById("dot");
+    if (d){ if (ok === false) d.classList.add("off"); else if (ok === true) d.classList.remove("off"); }
+  } catch(e){}
+}
+
+function fetchAllPhones(acc, from){
+  acc = acc || [];
+  from = from || 0;
+  var PAGE = 1000;
+  return _pfetch(SUPA + "/rest/v1/sent?select=phone&order=phone.asc&limit=" + PAGE + "&offset=" + from,
+                 { headers: supaHead(), cache: "no-store" }, 3, 3000)
+    .then(function(r){
+      if (!r.ok) throw new Error("read " + r.status);
+      return r.json();
+    })
+    .then(function(rows){
+      rows = rows || [];
+      rows.forEach(function(x){ if (x && x.phone) acc.push(x.phone); });
+      if (rows.length === PAGE) return fetchAllPhones(acc, from + PAGE);   // 还有下一页
+      return acc;
+    });
+}
+
+function sentLoad(full){
+  return fetchAllPhones()
+    .then(function(arr){
+      if (full){
+        // 冷启动：以云端为准，但保住本会话刚改、还没落库的改动
+        var m = {};
+        arr.forEach(function(p){ if (!_pendingDel[p]) m[p] = true; });
+        Object.keys(_pendingAdd).forEach(function(p){ m[p] = true; });
+        SENT = m;
+        _synced = true;
+      } else {
+        // 运行中：只合并云端新增，不用云端“缺少”来删本地
+        arr.forEach(function(p){ if (!_pendingDel[p] && !SENT[p]) SENT[p] = true; });
+      }
+      setSync("云端已连接 · 已发 " + Object.keys(SENT).length, true);
+    })
+    .catch(function(e){ setSync("云端读取失败: " + ((e && e.message) || e), false); });
+}
+
+var _dirty = false;
+var _pendingAdd = {};   // 待上传的新增号
+var _pendingDel = {};   // 待删除的号
+
+function sentPush(phones){
+  if (!phones || !phones.length) return Promise.resolve();
+  return _pfetch(SUPA + "/rest/v1/sent", {
+    method: "POST",
+    headers: supaHead({ "Content-Type": "application/json",
+                        "Prefer": "resolution=ignore-duplicates,return=minimal" }),
+    body: JSON.stringify(phones.map(function(p){ return { phone: p }; }))
+  }, 4, 2500).then(function(r){
+    if (!r.ok) return r.text().then(function(t){
+      throw new Error("写 " + r.status + " " + String(t || "").slice(0, 70));
+    });
+    return r.text();
+  });
+}
+
+function sentDelete(phone){
+  return _pfetch(SUPA + "/rest/v1/sent?phone=eq." + encodeURIComponent(phone), {
+    method: "DELETE",
+    headers: supaHead({ "Prefer": "return=minimal" })
+  }, 4, 2500).then(function(r){
+    if (!r.ok) return r.text().then(function(t){
+      throw new Error("删 " + r.status + " " + String(t || "").slice(0, 70));
+    });
+    return r.text();
+  });
+}
+
+var _lastSyncErr = "";
+function flushSent(){
+  var adds = Object.keys(_pendingAdd);
+  var dels = Object.keys(_pendingDel);
+  if (!adds.length && !dels.length){ _dirty = false; return Promise.resolve(); }
+  _dirty = true;
+  var jobs = [];
+  if (adds.length) jobs.push(
+    sentPush(adds).then(function(){
+      adds.forEach(function(p){ delete _pendingAdd[p]; });
+    }).catch(function(e){ _lastSyncErr = (e && e.message) || "网络错误"; })
+  );
+  dels.forEach(function(p){
+    jobs.push(sentDelete(p).then(function(){ delete _pendingDel[p]; })
+                            .catch(function(e){ _lastSyncErr = (e && e.message) || "网络错误"; }));
+  });
+  return Promise.all(jobs).then(function(){
+    _dirty = (Object.keys(_pendingAdd).length > 0 || Object.keys(_pendingDel).length > 0);
+    if (!_dirty) setSync("已保存到云端 · 已发 " + Object.keys(SENT).length, true);
+    else setSync("云端写入失败: " + _lastSyncErr, false);
+  });
+}
+
+function sentAdd(phones){
+  phones = phones || [];
+  phones.forEach(function(p){ SENT[p] = true; _pendingAdd[p] = true; delete _pendingDel[p]; });
+  sentPublish({ op: "add", phones: phones });
+  return flushSent();
+}
+
+function sentRemove(phone){
+  delete SENT[phone];
+  _pendingDel[phone] = true; delete _pendingAdd[phone];
+  sentPublish({ op: "remove", phone: phone });
+  return flushSent();
+}
+
+/* ================= 实时通道（ntfy.sh） ================= */
+var _riTimer = null;
+function renderIssueSoon(){
+  if (_riTimer) return;
+  _riTimer = setTimeout(function(){ _riTimer = null; renderIssue(true); }, 150);
+}
+function applyEvent(ev){
+  if (!ev || !ev.op) return;
+  if (ev.op === "add" && ev.phones) ev.phones.forEach(function(p){ if (p) SENT[p] = true; });
+  else if (ev.op === "remove" && ev.phone) delete SENT[ev.phone];
+  else if (ev.op === "set" && ev.phones){ SENT = {}; ev.phones.forEach(function(p){ if (p) SENT[p] = true; }); }
+  else return;
+  renderIssueSoon();
+}
+
+var PUB_CHUNK = 100;   // ntfy 免费版单条消息上限 4KB，超出会被静默丢弃，故分片
+function sentPublish(obj){
+  var parts = [obj];
+  if (obj.op === "add" && obj.phones && obj.phones.length > PUB_CHUNK){
+    parts = [];
+    for (var i = 0; i < obj.phones.length; i += PUB_CHUNK)
+      parts.push({ op: "add", phones: obj.phones.slice(i, i + PUB_CHUNK) });
+  }
+  parts.forEach(function(p){
+    try {
+      fetch(NTFY, { method: "POST", headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify(p) }).catch(function(){});
+    } catch(e){}
+  });
+}
+
+function sentSubscribe(){
+  try {
+    if (window.__es) { try { window.__es.close(); } catch(e){} }
+    var es = new EventSource(NTFY + "/sse");
+    window.__es = es;
+    es.onopen = function(){ document.getElementById("dot").classList.remove("off"); refreshSent(); };
+    es.onmessage = function(e){
+      try {
+        var outer = JSON.parse(e.data);
+        if (outer.event !== "message" || !outer.message) return;
+        applyEvent(JSON.parse(outer.message));
+      } catch(err){}
+    };
+    es.onerror = function(){ document.getElementById("dot").classList.add("off"); };
+  } catch(e){}
+}
+
+/* ================= 任务进度 ================= */
+function tasksProgress(rows){
+  var done=0, fail=0;
+  rows.forEach(function(r){ if(r.ok===true) done++; else fail++; });
+  return { done:done, fail:fail };
+}
+
+/* ================= 渲染：发号 ================= */
+function iFilter(){
+  var q = (document.getElementById("iq").value||"").trim();
+  var f = document.getElementById("if").value;
+  return DATA.rows.filter(function(r){
+    if (q && r.phone.indexOf(q) < 0) return false;
+    var s = isSent(r.phone);
+    if (f === "open" && s) return false;
+    if (f === "sent" && !s) return false;
+    return true;
+  });
+}
+
+function renderIssue(reset){
+  if (reset) shownI = 0;
+  var total = DATA.rows.length;
+  var sentN = DATA.rows.filter(function(r){ return isSent(r.phone); }).length;
+  var openN = total - sentN;
+  var pct = total ? Math.round(sentN*100/total) : 0;
+  document.getElementById("i-total").textContent = total;
+  document.getElementById("i-sent").textContent = sentN;
+  document.getElementById("i-open").textContent = openN;
+  document.getElementById("i-pct").textContent = pct + "%";
+  document.getElementById("i-bar").style.width = pct + "%";
+
+  var rows = iFilter();
+  var box = document.getElementById("ilist");
+  if (shownI === 0) box.innerHTML = "";
+  var end = Math.min(rows.length, shownI + LIMIT);
+  for (var i = shownI; i < end; i++){
+    var p = rows[i].phone;
+    var s = isSent(p);
+    var div = document.createElement("div");
+    div.className = "row";
+    div.innerHTML =
+      '<div class="top"><span class="phone">' + esc(p) + "</span>" +
+      (s ? '<span class="tag t-sent">已发</span>' : '<span class="tag t-wait">未发</span>') +
+      '<button class="act ' + (s ? "undo" : "send") + '" data-tog="' + esc(p) + '">' +
+      (s ? "改回未发" : "发号") + "</button></div>";
+    box.appendChild(div);
+  }
+  shownI = end;
+  addMore(box, rows.length, shownI, function(){ renderIssue(false); });
+}
+
+/* ================= 渲染：进度 ================= */
+function pFilter(){
+  var q = (document.getElementById("pq").value||"").trim();
+  var f = document.getElementById("pf").value;
+  return DATA.rows.filter(function(r){
+    if (q && r.phone.indexOf(q) < 0) return false;
+    if (f === "ok"   && r.ok !== true)  return false;
+    if (f === "bad"  && r.ok !== false) return false;
+    if (f === "wait" && r.ok !== null)  return false;
+    return true;
+  });
+}
+
+function renderProgress(reset){
+  if (reset) shownP = 0;
+  var g = tasksProgress(DATA.rows);
+  document.getElementById("p-total").textContent = DATA.total;
+  document.getElementById("p-done").textContent = g.done;
+  document.getElementById("p-fail").textContent = g.fail;
+  document.getElementById("p-rest").textContent = DATA.rest;
+  var pct = DATA.total ? Math.round((g.done + g.fail)*100/DATA.total) : 0;
+  document.getElementById("p-bar").style.width = pct + "%";
+
+  var rows = pFilter();
+  var box = document.getElementById("plist");
+  if (shownP === 0) box.innerHTML = "";
+  var end = Math.min(rows.length, shownP + LIMIT);
+  for (var i = shownP; i < end; i++){
+    var r = rows[i];
+    var tg = r.ok === true ? '<span class="tag t-ok">完成</span>'
+           : r.ok === false ? '<span class="tag t-bad">未完成</span>'
+           : '<span class="tag t-wait">未跑</span>';
+    var extra = r.balance ? '积分 <span class="score">' + esc(String(r.balance).split(".")[0]) + "</span>" : "";
+    var div = document.createElement("div");
+    div.className = "row";
+    div.innerHTML =
+      '<div class="top"><span class="phone">' + esc(r.phone) + "</span>" + tg + "</div>" +
+      '<div class="mid">' + esc(r.tasks) + (extra ? " · " + extra : "") +
+      (r.time ? " · " + esc(r.time) : "") + "</div>";
+    box.appendChild(div);
+  }
+  shownP = end;
+  addMore(box, rows.length, shownP, function(){ renderProgress(false); });
+}
+
+function addMore(box, total, shown, fn){
+  var old = box.querySelector(".more"); if (old) old.remove();
+  if (shown >= total) return;
+  var b = document.createElement("div");
+  b.className = "more";
+  b.textContent = "还有 " + (total - shown) + " 条，点这里加载更多";
+  b.onclick = fn;
+  box.appendChild(b);
+}
+
+/* ================= 交互：发号 ================= */
+function stepQty(d){
+  var v = parseInt((document.getElementById("qty").value||"").replace(/[^0-9]/g,""),10);
+  if (isNaN(v)) v = 1;
+  v = Math.max(1, v + d);
+  document.getElementById("qty").value = v;
+}
+
+function issue(){
+  var n = parseInt((document.getElementById("qty").value||"").replace(/[^0-9]/g,""),10);
+  if (!n || n < 1){ toast("请输入发放数量"); return; }
+  var open = DATA.rows.filter(function(r){ return !isSent(r.phone); }).map(function(r){ return r.phone; });
+  if (!open.length){ toast("没有未发的号了"); return; }
+  var take = open.slice(0, n);
+  take.forEach(function(p){ SENT[p] = true; });
+  renderIssue(true);
+  showDlg(take);
+  sentAdd(take).then(function(){
+    toast("已发 " + take.length + " 个，已同步");
+  }).catch(function(){
+    toast("已发 " + take.length + " 个（云端同步中…）");
+  });
+}
+
+function toggle(p){
+  if (isSent(p)){
+    delete SENT[p]; renderIssue(true); toast("已改回未发");
+    sentRemove(p).catch(function(){ toast("已改回未发（云端同步中…）"); });
+  } else {
+    SENT[p] = true; renderIssue(true); toast("已标记为已发");
+    sentAdd([p]).catch(function(){ toast("已标记为已发（云端同步中…）"); });
+  }
+}
+
+document.getElementById("ilist").addEventListener("click", function(e){
+  var b = e.target.closest("[data-tog]");
+  if (b) toggle(b.getAttribute("data-tog"));
+});
+
+/* ================= 弹层 ================= */
+function showDlg(take){
+  lastTake = take;
+  document.getElementById("dlg-t").textContent = "本次发放 " + take.length + " 个";
+  var h = "";
+  take.forEach(function(p, i){
+    h += '<div class="item"><span class="i">' + (i+1) + '</span><span class="p">' + esc(p) + "</span></div>";
+  });
+  document.getElementById("dlg-b").innerHTML = h;
+  document.getElementById("dlg").classList.remove("hide");
+}
+function closeDlg(){ document.getElementById("dlg").classList.add("hide"); }
+function copyTake(){
+  var t = lastTake.join("\n");
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(function(){ toast("已复制 " + lastTake.length + " 条"); }, function(){ toast("复制失败"); });
+  else toast("复制失败，请长按选择");
+}
+
+/* ================= 提示 ================= */
+var tt;
+function toast(m){
+  var el = document.getElementById("toast");
+  el.textContent = m; el.classList.add("on");
+  clearTimeout(tt); tt = setTimeout(function(){ el.classList.remove("on"); }, 1800);
+}
+
+/* ================= 标签页 ================= */
+function switchTab(t){
+  tab = t;
+  document.getElementById("tab-issue").classList.toggle("hide", t !== "issue");
+  document.getElementById("tab-progress").classList.toggle("hide", t !== "progress");
+  document.getElementById("tabbtn-issue").classList.toggle("on", t === "issue");
+  document.getElementById("tabbtn-progress").classList.toggle("on", t === "progress");
+}
+
+/* ================= 刷新 ================= */
+function refreshData(){
+  fetch("data144.json?t=" + Date.now(), { cache:"no-store" })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      DATA = d;
+      document.getElementById("upd").textContent = d.updated || "-";
+      renderIssue(true); renderProgress(true);
+    })
+    .catch(function(){ document.getElementById("upd").textContent = "进度连接失败"; });
+}
+var _synced = false;
+var _lastSentLoad = 0;
+function refreshSent(full){
+  if (document.visibilityState === "hidden" && !full) return Promise.resolve();
+  if (_dirty && !full) return Promise.resolve();   // 本地有还没落库的改动，先别让云端覆盖
+  if (!full && Date.now() - _lastSentLoad < 10000) return Promise.resolve();
+  _lastSentLoad = Date.now();
+  return sentLoad(full).then(function(){ renderIssue(true); });
+}
+function refreshAll(){ refreshData(); refreshSent(true); }
+
+/* ================= 密码门禁 ================= */
+function show(){
+  document.getElementById("login").classList.add("hide");
+  document.getElementById("app").classList.remove("hide");
+  refreshAll();
+  sentSubscribe();
+  setInterval(refreshData, 5000);
+  setInterval(refreshSent, 180000);
+  setInterval(flushSent, 20000);
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState === "visible") refreshSent(true);
+  });
+}
+function doLogin(){
+  if (document.getElementById("pw").value === PASS){
+    try { localStorage.setItem("vb_ok","1"); } catch(e){}
+    show();
+  } else {
+    document.getElementById("err").textContent = "密码不对，请重试";
+  }
+}
+function logout(){
+  try { localStorage.removeItem("vb_ok"); } catch(e){}
+  location.reload();
+}
+document.getElementById("pw").addEventListener("keydown", function(e){
+  if (e.key === "Enter") doLogin();
+});
+document.getElementById("iq").addEventListener("input", function(){ renderIssue(true); });
+document.getElementById("if").addEventListener("change", function(){ renderIssue(true); });
+document.getElementById("pq").addEventListener("input", function(){ renderProgress(true); });
+document.getElementById("pf").addEventListener("change", function(){ renderProgress(true); });
+try { if (localStorage.getItem("vb_ok") === "1") show(); } catch(e){}
+</script>
+</body>
+</html>
