@@ -118,7 +118,7 @@
 
 <div class="wrap hide" id="app">
   <h1>Vobile 发号 / 看板</h1>
-  <div class="upd"><span class="dot" id="dot"></span>云端同步中 · <span id="upd">-</span>
+  <div class="upd"><span class="dot" id="dot"></span><span id="syncmsg">云端连接中…</span> · <span id="upd">-</span>
     <a href="#" class="logout" onclick="logout();return false">退出</a></div>
 
   <div class="tabs">
@@ -177,7 +177,7 @@
     <div class="list" id="plist"></div>
   </section>
 
-  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018e</div>
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018f</div>
 </div>
 
 <div id="dlg" class="hide">
@@ -234,6 +234,15 @@ function supaHead(extra){
   return h;
 }
 
+function setSync(msg, ok){
+  try {
+    var el = document.getElementById("syncmsg");
+    if (el) el.textContent = msg;
+    var d = document.getElementById("dot");
+    if (d){ if (ok === false) d.classList.add("off"); else if (ok === true) d.classList.remove("off"); }
+  } catch(e){}
+}
+
 function sentLoad(full){
   return _pfetch(SUPA + "/rest/v1/sent?select=phone&limit=100000",
                  { headers: supaHead(), cache: "no-store" }, 3, 3000)
@@ -255,9 +264,9 @@ function sentLoad(full){
         // 运行中：只合并云端新增，不用云端“缺少”来删本地
         arr.forEach(function(p){ if (!_pendingDel[p] && !SENT[p]) SENT[p] = true; });
       }
-      document.getElementById("dot").classList.remove("off");
+      setSync("云端已连接 · 已发 " + Object.keys(SENT).length, true);
     })
-    .catch(function(){ document.getElementById("dot").classList.add("off"); });
+    .catch(function(e){ setSync("云端读取失败: " + ((e && e.message) || e), false); });
 }
 
 var _dirty = false;
@@ -272,7 +281,9 @@ function sentPush(phones){
                         "Prefer": "resolution=ignore-duplicates,return=minimal" }),
     body: JSON.stringify(phones.map(function(p){ return { phone: p }; }))
   }, 4, 2500).then(function(r){
-    if (!r.ok) throw new Error("write " + r.status);
+    if (!r.ok) return r.text().then(function(t){
+      throw new Error("写 " + r.status + " " + String(t || "").slice(0, 70));
+    });
     return r.text();
   });
 }
@@ -282,11 +293,14 @@ function sentDelete(phone){
     method: "DELETE",
     headers: supaHead({ "Prefer": "return=minimal" })
   }, 4, 2500).then(function(r){
-    if (!r.ok) throw new Error("del " + r.status);
+    if (!r.ok) return r.text().then(function(t){
+      throw new Error("删 " + r.status + " " + String(t || "").slice(0, 70));
+    });
     return r.text();
   });
 }
 
+var _lastSyncErr = "";
 function flushSent(){
   var adds = Object.keys(_pendingAdd);
   var dels = Object.keys(_pendingDel);
@@ -294,14 +308,18 @@ function flushSent(){
   _dirty = true;
   var jobs = [];
   if (adds.length) jobs.push(
-    sentPush(adds).then(function(){ adds.forEach(function(p){ delete _pendingAdd[p]; }); })
-                 .catch(function(){})
+    sentPush(adds).then(function(){
+      adds.forEach(function(p){ delete _pendingAdd[p]; });
+    }).catch(function(e){ _lastSyncErr = (e && e.message) || "网络错误"; })
   );
   dels.forEach(function(p){
-    jobs.push(sentDelete(p).then(function(){ delete _pendingDel[p]; }).catch(function(){}));
+    jobs.push(sentDelete(p).then(function(){ delete _pendingDel[p]; })
+                            .catch(function(e){ _lastSyncErr = (e && e.message) || "网络错误"; }));
   });
   return Promise.all(jobs).then(function(){
     _dirty = (Object.keys(_pendingAdd).length > 0 || Object.keys(_pendingDel).length > 0);
+    if (!_dirty) setSync("已保存到云端 · 已发 " + Object.keys(SENT).length, true);
+    else setSync("云端写入失败: " + _lastSyncErr, false);
   });
 }
 
