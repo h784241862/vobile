@@ -177,7 +177,7 @@
     <div class="list" id="plist"></div>
   </section>
 
-  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018f</div>
+  <div class="foot">数据由电脑端上传 · 发号状态云端实时同步 · 电脑关机也能看 · v1018g</div>
 </div>
 
 <div id="dlg" class="hide">
@@ -243,16 +243,27 @@ function setSync(msg, ok){
   } catch(e){}
 }
 
-function sentLoad(full){
-  return _pfetch(SUPA + "/rest/v1/sent?select=phone&limit=100000",
+function fetchAllPhones(acc, from){
+  acc = acc || [];
+  from = from || 0;
+  var PAGE = 1000;
+  return _pfetch(SUPA + "/rest/v1/sent?select=phone&order=phone.asc&limit=" + PAGE + "&offset=" + from,
                  { headers: supaHead(), cache: "no-store" }, 3, 3000)
     .then(function(r){
       if (!r.ok) throw new Error("read " + r.status);
       return r.json();
     })
     .then(function(rows){
-      var arr = [];
-      (rows || []).forEach(function(x){ if (x && x.phone) arr.push(x.phone); });
+      rows = rows || [];
+      rows.forEach(function(x){ if (x && x.phone) acc.push(x.phone); });
+      if (rows.length === PAGE) return fetchAllPhones(acc, from + PAGE);   // 还有下一页
+      return acc;
+    });
+}
+
+function sentLoad(full){
+  return fetchAllPhones()
+    .then(function(arr){
       if (full){
         // 冷启动：以云端为准，但保住本会话刚改、还没落库的改动
         var m = {};
